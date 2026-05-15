@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>PyCon 2026 Knowledge Graph</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.30.2/cytoscape.min.js"></script>
+  <script src="https://unpkg.com/layout-base/layout-base.js"></script>
+  <script src="https://unpkg.com/cose-base/cose-base.js"></script>
+  <script src="https://unpkg.com/cytoscape-fcose/cytoscape-fcose.js"></script>
+</head>
+<body>
+  <header>
+    <div class="title">
+      <h1>PyCon 2026 <span class="accent">Knowledge Graph</span></h1>
+      <p class="subtitle">Built from live SerpApi searches · entities linked across talks, speakers, repos, and topics</p>
+    </div>
+    <div class="header-stats" id="header-stats">
+      <span class="stat"><b id="stat-nodes">0</b> nodes</span>
+      <span class="stat"><b id="stat-edges">0</b> edges</span>
+    </div>
+  </header>
+
+  <main>
+    <aside class="sidebar">
+      <section class="card">
+        <h2>Ingest</h2>
+        <p class="hint">Trigger SerpApi crawls. Results are cached locally.</p>
+        <label class="check"><input type="checkbox" id="use-claude" /> Use Claude for extraction (if API key set)</label>
+        <label class="check"><input type="checkbox" id="expand-speakers" checked /> Expand top speakers</label>
+        <textarea id="extra-queries" placeholder="One extra query per line (optional)"></textarea>
+        <button id="ingest-btn">Run ingest</button>
+        <pre id="ingest-log" class="log"></pre>
+      </section>
+
+      <section class="card">
+        <h2>Filter</h2>
+        <div id="type-filters" class="filters"></div>
+        <input id="search" placeholder="Search nodes…" />
+      </section>
+
+      <section class="card" id="detail-card" hidden>
+        <h2 id="detail-title">Node</h2>
+        <p id="detail-type" class="muted"></p>
+        <a id="detail-url" target="_blank" rel="noreferrer"></a>
+        <div id="detail-neighbors"></div>
+        <h3>Sources</h3>
+        <ul id="detail-sources"></ul>
+      </section>
+    </aside>
+
+    <section id="graph" class="graph"></section>
+  </main>
+
+  <script src="/static/graph.js"></script>
+</body>
+</html>

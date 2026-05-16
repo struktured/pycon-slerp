@@ -125,21 +125,26 @@ Open <http://127.0.0.1:8765>. Three flows to try:
 
 ## Powered by PyCon talks
 
-This project leans on work from PyCon 2026 speakers. Each entry below is also surfaced in the sidebar — click to pin the talk + speaker(s) into the graph.
+This project draws directly on six talks attended at PyCon US 2026. Each one shows up in the sidebar — clicking pins the talk + speaker(s) into the graph as real nodes.
 
 | Talk | Speaker(s) | Used for |
 | --- | --- | --- |
-| PyScript & in-browser Python — running agents at the edge | Antonio Cuni, Fabio Pliger (Anaconda) | In-browser LLM extraction with WebLLM, no API key required |
-| Containerization, async I/O, and agent-friendly Python services | _talk attribution pending_ | Granian as the production ASGI runner |
-| Structured concurrency for Python agents | _talk attribution pending_ | `anyio` task groups for parallel multi-engine ingest |
+| [Distributing AI with Python in the Browser — Edge Inference Without Infra](https://us.pycon.org/2026/schedule/presentation/126/) | Fabio Pliger (Anaconda) | In-browser LLM extraction via WebLLM + WebGPU — no API key required |
+| PEP 750: t-strings — Safer and Smarter String Processing | Vinicus Gubiana Ferreria | PEP 750-style structured query templating in `app/query_template.py` — safe SerpApi search-query interpolation |
+| AI-Assisted Contributions and Maintainer Load | Palao Melichorre (Django) | Multi-backend extraction (heuristic / Claude / WebLLM) — judge the code, not the coder |
+| Beyond the Hype: How Developers Actually Use AI Tools (panel) | Carol Willing · Catherine Nelson · Jelle Zijlstra (OpenAI) · Jodie Burchell (JetBrains) · Lais Carvalho (Pydantic) · Maike Scherer (American Airlines) | Ask-the-graph mirrors the panel's agentic loop: plan → execute → evaluate → iterate, with search results as the verifier |
+| Building Enterprise Python Libraries in a Modern Way | Dan Furman · David Hoover (Capital One) | Layered library abstraction — engine wrappers → entity extractors → graph builder |
+| Why SWE Best Practices Fail in Data Engineering | Constance Martineau (Astronomer) | Provenance-first design — every node carries its source query and snippet, because in data work the data is the variable |
 
 _Edit `app/inspirations.py` to add or correct attributions._
 
-### Pre-seeded sponsors
+### Pre-seeded lineup
 
-The graph boots with 10 confirmed PyCon 2026 sponsors so it isn't empty before the first crawl, and so live searches that mention these organizations attach as sources to the existing nodes:
+The graph boots with 32 anchor nodes: the PyCon 2026 event, 13 confirmed sponsors, 12 speakers from attended talks, and the 6 talks themselves — so live crawls attach sources to existing nodes rather than create duplicates.
 
-Temporal · GitHub · Pydantic · Streamlit · kraken.tech · Jane Street · Hudson River Trading · OpenAI · Capital One · Point72
+**Sponsors:** Temporal · GitHub · Pydantic · Streamlit · kraken.tech · Jane Street · Hudson River Trading · OpenAI · Capital One · Point72 · Anaconda · JetBrains · Astronomer
+
+**Speakers seeded:** Fabio Pliger · Vinicus Gubiana Ferreria · Palao Melichorre · Carol Willing · Catherine Nelson · Jelle Zijlstra · Jodie Burchell · Lais Carvalho · Maike Scherer · Dan Furman · David Hoover · Constance Martineau
 
 ## API
 
@@ -186,7 +191,8 @@ app/
 ├── db.py                SQLite schema + helpers
 ├── serpapi_client.py    Async SerpApi wrapper, multi-engine, with disk cache
 ├── entity_extractor.py  Heuristic + Claude + PAA/related extraction
-├── inspirations.py      Pre-seeded sponsors + "Powered by PyCon talks"
+├── query_template.py    PEP 750-style safe query templating (credits: Vinicus' t-strings talk)
+├── inspirations.py      Pre-seeded sponsors/speakers/talks + "Powered by PyCon talks"
 ├── graph_builder.py     Parallel ingest (anyio) + Ask-the-graph orchestration
 └── main.py              FastAPI app — Granian-compatible
 

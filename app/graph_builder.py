@@ -10,6 +10,7 @@ import anyio
 from . import db
 from .entity_extractor import Entity, Relation, _id_for, extract, extract_related
 from .inspirations import seed_known_entities
+from .query_template import safe_query
 from .serpapi_client import SerpApiClient
 
 log = logging.getLogger(__name__)
@@ -86,8 +87,17 @@ async def run_ingest(
             speakers = _top_speakers(max_speakers_to_expand)
             follow_ups: list[tuple[str, str, dict]] = []
             for speaker_label in speakers:
-                follow_ups.append((f'"{speaker_label}" PyCon python', "google", {}))
-                follow_ups.append((f'"{speaker_label}"', "google_scholar", {}))
+                # PEP 750-style safe templating — credit: Vinicus Gubiana
+                # Ferreria's PyCon 2026 t-strings talk. Keeps stray quotes
+                # or whitespace in a speaker name from breaking the query.
+                follow_ups.append((
+                    safe_query('"{speaker}" PyCon python', speaker=speaker_label),
+                    "google", {},
+                ))
+                follow_ups.append((
+                    safe_query('"{speaker}"', speaker=speaker_label),
+                    "google_scholar", {},
+                ))
             await _run_parallel(client, follow_ups, use_claude, stats)
 
     return stats

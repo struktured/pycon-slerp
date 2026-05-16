@@ -76,7 +76,7 @@ async def run_ingest(
     async with SerpApiClient() as client:
         seeds = list(SEED_QUERIES)
         for q in extra_queries or []:
-            seeds.append((q, "google", {}))
+            seeds.append((_scope_to_pycon(q), "google", {}))
         if engines:
             seeds = [s for s in seeds if s[1] in engines]
 
@@ -214,6 +214,25 @@ def _kg_facts(kg: dict) -> list[dict]:
             label = k.replace("_", " ").strip()
             facts.append({"label": label, "value": ", ".join(str(x) for x in v[:5])})
     return facts[:8]
+
+
+def _scope_to_pycon(query: str) -> str:
+    """Auto-scope a user-supplied extra query to PyCon/Python context.
+
+    The whole app is about PyCon 2026 — users shouldn't have to repeat that
+    in every search. Only adds tokens that aren't already present so a query
+    like "pycon 2026 lightning talks" stays unchanged.
+    """
+    q = query.strip()
+    lower = q.lower()
+    if not q:
+        return q
+    additions: list[str] = []
+    if "pycon" not in lower:
+        additions.append("PyCon 2026")
+    if "python" not in lower and "py " not in lower:
+        additions.append("python")
+    return " ".join([q, *additions]) if additions else q
 
 
 def _top_speakers(limit: int) -> list[str]:

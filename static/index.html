@@ -42,7 +42,7 @@
         <label class="check"><input type="checkbox" id="use-browser-llm" /> In-browser LLM extraction (WebGPU, no API key)</label>
         <span id="webllm-badge" class="badge" hidden></span>
         <label class="check"><input type="checkbox" id="expand-speakers" checked /> Expand top speakers (web + scholar)</label>
-        <textarea id="extra-queries" placeholder="One extra query per line (optional)"></textarea>
+        <textarea id="extra-queries" placeholder="One extra topic per line (e.g. &quot;rust&quot;, &quot;type hints&quot;) &#10;&#10;Auto-scoped to PyCon 2026 + Python."></textarea>
         <button id="ingest-btn">Run ingest</button>
         <pre id="ingest-log" class="log"></pre>
       </section>
@@ -62,6 +62,7 @@
       <section class="card" id="detail-card" hidden>
         <h2 id="detail-title">Node</h2>
         <p id="detail-type" class="muted"></p>
+        <div id="detail-summary" class="summary" hidden></div>
         <a id="detail-url" target="_blank" rel="noreferrer"></a>
         <div id="detail-kg" class="kg-card" hidden></div>
         <div id="detail-meta" class="meta-pills"></div>

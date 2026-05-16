@@ -26,6 +26,7 @@ const state = {
   webllm: { engine: null, status: "idle", model: null },
   adminRequired: false,
   token: null,
+  summariesEnabled: false,
 };
 
 // Pick up an admin token from `?t=...` (the share-link form) or from
@@ -215,6 +216,7 @@ async function showDetail(nodeId) {
 
     renderKgCard(d);
     renderMetaPills(d);
+    loadSummary(nodeId);
 
     const nbBox = document.getElementById("detail-neighbors");
     nbBox.innerHTML = "";
@@ -243,6 +245,7 @@ async function showDetail(nodeId) {
     });
 
     card.hidden = false;
+    card.scrollIntoView({ behavior: "smooth", block: "start" });
   } catch (e) {
     console.error(e);
   }
@@ -298,6 +301,35 @@ function formatCount(n) {
   if (x >= 1e6) return (x / 1e6).toFixed(1) + "M";
   if (x >= 1e3) return (x / 1e3).toFixed(1) + "K";
   return String(x);
+}
+
+async function loadSummary(nodeId) {
+  const box = document.getElementById("detail-summary");
+  if (!box) return;
+  if (!state.summariesEnabled) {
+    box.hidden = true;
+    return;
+  }
+  box.hidden = false;
+  box.className = "summary loading";
+  box.textContent = "Generating…";
+  try {
+    const r = await fetchJSON(`/api/node/${nodeId}/summary`);
+    if (r.summary) {
+      box.className = "summary";
+      box.textContent = r.summary;
+    } else if (!r.available) {
+      box.className = "summary unavailable";
+      box.textContent = "Set ANTHROPIC_API_KEY to enable AI summaries.";
+    } else if (r.error) {
+      box.className = "summary unavailable";
+      box.textContent = r.error;
+    } else {
+      box.hidden = true;
+    }
+  } catch (e) {
+    box.hidden = true;
+  }
 }
 
 function escapeHtml(s) {
@@ -555,6 +587,7 @@ async function refreshLock() {
   try {
     const h = await fetchJSON("/api/health");
     state.adminRequired = !!h.admin_token_required;
+    state.summariesEnabled = !!h.anthropic_key_set;
     const badge = document.getElementById("lock-badge");
     if (!badge) return;
     if (!state.adminRequired) {

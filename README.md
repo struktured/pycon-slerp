@@ -6,6 +6,8 @@
 
 <sub>Built for the SerpApi raffle · Long Beach · May 13–19, 2026</sub>
 
+🌐 **Live demo:** <https://pycon-slerp.fly.dev/> · share-link with write access: <https://pycon-slerp.fly.dev/?t=pycon-2026>
+
 [Quick Start](#quick-start) · [Features](#features) · [How It Works](#how-it-works) · [Powered by PyCon talks](#powered-by-pycon-talks) · [API](#api)
 
 <br />
@@ -26,7 +28,7 @@ Three extraction backends ship out of the box:
 - **Server-side Claude** — structured extraction via Anthropic SDK (`claude-haiku-4-5`).
 - **In-browser WebLLM** — Llama-3.2-1B running on WebGPU. **No API key required.** Inspired by the PyScript / in-browser-Python work from the Anaconda team.
 
-The graph also ships with **10 confirmed PyCon 2026 sponsors pre-seeded** so it never starts empty, plus an **"Ask the graph"** box that turns a natural-language question into a multi-engine SerpApi search plan and watches the graph grow live.
+The graph also ships with **13 confirmed PyCon 2026 sponsors plus 12 speakers and 6 talks pre-seeded** so it never starts empty, plus an **"Ask the graph"** box that turns a natural-language question into a multi-engine SerpApi search plan and watches the graph grow live. Click any node for an **AI-generated summary card** that places it in the PyCon 2026 context using its source snippets and graph neighbors.
 
 ## Features
 
@@ -40,7 +42,8 @@ The graph also ships with **10 confirmed PyCon 2026 sponsors pre-seeded** so it 
 | **Long Beach venue intel** | `google_local` queries pull cafés, restaurants, hotels with ratings/coords near the convention center. |
 | **Citation-aware Scholar** | Speakers get linked to their papers with citation counts. |
 | **Speaker expansion** | Top-degree speakers automatically get follow-up searches across Google + Scholar. |
-| **Pre-seeded lineup** | 10 confirmed sponsors + the PyCon 2026 event anchor are inserted at boot. |
+| **AI summary cards** | Click any node and Claude writes a 2-sentence summary from its sources + neighbors, cached per-node. |
+| **Pre-seeded lineup** | 32 anchor nodes — event + 13 sponsors + 12 speakers + 6 talks — inserted at boot. |
 | **Parallel ingest** | All seed queries fired concurrently via `anyio` task groups (structured concurrency). |
 | **Live provenance** | Click any node to see exactly which search results contributed to it. |
 
@@ -152,6 +155,7 @@ The graph boots with 32 anchor nodes: the PyCon 2026 event, 13 confirmed sponsor
 | --- | --- | --- |
 | `GET` | `/api/graph` | Full graph as `{ nodes, edges }` |
 | `GET` | `/api/node/{id}` | Node detail with sources + neighbors + KG card |
+| `GET` | `/api/node/{id}/summary` | Claude-generated 2-sentence summary (cached per node) |
 | `GET` | `/api/stats` | Node/edge counts, breakdown by type |
 | `POST` | `/api/ingest` | Trigger the full multi-engine crawl |
 | `POST` | `/api/ask` | Natural-language question → plan → live graph update |
@@ -193,6 +197,7 @@ app/
 ├── entity_extractor.py  Heuristic + Claude + PAA/related extraction
 ├── query_template.py    PEP 750-style safe query templating (credits: Vinicus' t-strings talk)
 ├── inspirations.py      Pre-seeded sponsors/speakers/talks + "Powered by PyCon talks"
+├── summarizer.py        Claude-generated node summary cards (cached in node metadata)
 ├── graph_builder.py     Parallel ingest (anyio) + Ask-the-graph orchestration
 └── main.py              FastAPI app — Granian-compatible
 
@@ -202,7 +207,11 @@ static/
 └── styles.css           Dark theme
 
 scripts/
-└── screenshot.py        Headless Playwright screenshot
+├── screenshot.py        Headless Playwright screenshot
+├── setup_fly.sh         Install flyctl
+├── add_fly_to_shell.sh  Append flyctl env to your shell rc
+├── deploy_fly.sh        End-to-end Fly deploy (app + volume + secrets + deploy)
+└── set_anthropic_key.sh Update the Anthropic Fly secret without redeploying
 
 data/                    SQLite + SerpApi response cache (gitignored)
 ```
@@ -223,27 +232,27 @@ data/                    SQLite + SerpApi response cache (gitignored)
 The repo ships with a `Dockerfile` and `fly.toml` tuned for a live demo where:
 
 - **Your SerpApi key never leaves the server** — set as a Fly secret, used only inside the VM.
-- **No Anthropic key needed on the server** — visitors run an in-browser WebLLM (Llama-3.2-1B on WebGPU) for entity extraction. Free on their hardware.
+- **Anthropic key is optional** — visitors can run in-browser WebLLM (Llama-3.2-1B on WebGPU) for entity extraction with no server-side key. Setting `ANTHROPIC_API_KEY` enables AI summary cards and server-side Claude extraction; without it those features hide cleanly.
 - **Live endpoints are passcode-gated.** `/api/ingest`, `/api/ask`, `/api/inject`, `/api/inspirations/pin` require `ADMIN_TOKEN`. Anonymous traffic can still browse the pre-built graph.
 - **Persistent volume** keeps the SQLite cache between deploys, so re-runs are free.
 
+The repo includes scripts that drive the whole thing:
+
 ```bash
-# one-time setup
-fly launch --no-deploy --copy-config              # accept defaults; edit app name in fly.toml
-fly volume create pycon_data --region lax --size 1
-fly secrets set SERPAPI_API_KEY=<your-key>
-fly secrets set ADMIN_TOKEN=$(openssl rand -hex 16)
+./scripts/setup_fly.sh           # installs flyctl if missing
+./scripts/add_fly_to_shell.sh    # appends flyctl env to ~/.bashrc (idempotent)
+fly auth login                   # opens browser
 
-# ship it
-fly deploy
+# one shot — creates app, volume, secrets, deploys, prints share URL
+./scripts/deploy_fly.sh
 
-# hand out the demo link (URL token unlocks Ask + Ingest for the recipient):
-echo "https://$(fly status --json | jq -r .Hostname)/?t=$(fly ssh console -C 'printenv ADMIN_TOKEN')"
+# enable AI summary cards on the live demo (sets ANTHROPIC_API_KEY as a Fly secret)
+./scripts/set_anthropic_key.sh
 ```
 
-The token is stored in `localStorage` after the first visit, so the recipient just bookmarks the plain URL after that. Anyone arriving without the token sees a 🔒 badge and can browse but not spend your quota.
+`deploy_fly.sh` is idempotent — re-running skips the app/volume creation and just redeploys. Required env: `SERPAPI_API_KEY` (read from `.env` automatically). Optional: `ADMIN_TOKEN` (defaults to a random hex string; set it to something memorable like `pycon-2026` if you want a shareable passcode).
 
-To pre-warm the graph before going public, run one ingest locally with your key, then deploy — the SQLite cache plus the seeded sponsors/speakers means the live site looks alive from request zero.
+The token is stored in `localStorage` after the first visit, so the recipient just bookmarks the plain URL after that. Anyone arriving without the token sees a 🔒 badge and can browse but not spend your quota.
 
 ## Reproducing the Screenshot
 

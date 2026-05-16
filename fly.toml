@@ -1,36 +1,30 @@
-# Fly.io config for the PyCon 2026 Knowledge Graph demo.
+# fly.toml app configuration file generated for pycon-slerp on 2026-05-16T09:52:29-07:00
 #
-# Quick start:
-#   fly launch --no-deploy --copy-config           # creates the app, edit app name below
-#   fly volume create pycon_data --region lax --size 1
-#   fly secrets set SERPAPI_API_KEY=... ADMIN_TOKEN=$(openssl rand -hex 16)
-#   fly deploy
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
 #
-# Hand out the demo with: https://<app>.fly.dev/?t=<your-ADMIN_TOKEN>
-# Visitors with the link can Ask and Ingest; without it they can browse only.
 
-app = "pycon-slerp"            # change to your own app name
-primary_region = "lax"         # Los Angeles — closest to Long Beach
+app = 'pycon-slerp'
+primary_region = 'lax'
 
 [build]
 
 [env]
-  PORT = "8080"
-  PYCON_DATA_DIR = "/data"
+  PORT = '8080'
+  PYCON_DATA_DIR = '/data'
 
-[mounts]
-  source = "pycon_data"
-  destination = "/data"
+[[mounts]]
+  source = 'pycon_data'
+  destination = '/data'
 
 [http_service]
   internal_port = 8080
   force_https = true
-  auto_stop_machines = "stop"
+  auto_stop_machines = 'stop'
   auto_start_machines = true
   min_machines_running = 0
-  processes = ["app"]
+  processes = ['app']
 
 [[vm]]
-  cpu_kind = "shared"
+  cpu_kind = 'shared'
   cpus = 1
   memory_mb = 512

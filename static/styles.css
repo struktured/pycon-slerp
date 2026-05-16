@@ -252,6 +252,44 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
   position: relative;
 }
 
+.summary {
+  margin: 10px 0;
+  padding: 10px 12px;
+  background: linear-gradient(135deg, rgba(176, 139, 255, 0.10), rgba(69, 132, 182, 0.10));
+  border: 1px solid rgba(176, 139, 255, 0.35);
+  border-radius: 8px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--text);
+  position: relative;
+}
+
+.summary::before {
+  content: "AI SUMMARY";
+  position: absolute;
+  top: -8px;
+  left: 10px;
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  background: var(--panel);
+  color: #b08bff;
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-weight: 600;
+}
+
+.summary.loading {
+  color: var(--muted);
+  font-style: italic;
+}
+
+.summary.unavailable {
+  background: var(--bg);
+  border-color: var(--border);
+  color: var(--muted);
+  font-size: 12px;
+}
+
 #detail-card a {
   color: var(--accent-2);
   text-decoration: none;

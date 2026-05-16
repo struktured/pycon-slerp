@@ -22,6 +22,7 @@ from .inspirations import (
     pinnable_relations,
 )
 from .serpapi_client import SerpApiClient
+from .summarizer import get_or_create_summary
 
 load_dotenv()
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
@@ -105,6 +106,11 @@ def api_node(node_id: str) -> dict:
     if not detail:
         raise HTTPException(status_code=404, detail="node not found")
     return detail
+
+
+@app.get("/api/node/{node_id}/summary")
+def api_node_summary(node_id: str, _: None = Depends(require_admin)) -> dict:
+    return get_or_create_summary(node_id)
 
 
 @app.post("/api/ingest")

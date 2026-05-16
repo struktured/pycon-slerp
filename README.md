@@ -218,6 +218,33 @@ data/                    SQLite + SerpApi response cache (gitignored)
 | LLM — server | Anthropic Claude Haiku 4.5 (optional) |
 | LLM — client | `@mlc-ai/web-llm` (Llama-3.2-1B, WebGPU, no API key) |
 
+## Deploying to Fly.io
+
+The repo ships with a `Dockerfile` and `fly.toml` tuned for a live demo where:
+
+- **Your SerpApi key never leaves the server** — set as a Fly secret, used only inside the VM.
+- **No Anthropic key needed on the server** — visitors run an in-browser WebLLM (Llama-3.2-1B on WebGPU) for entity extraction. Free on their hardware.
+- **Live endpoints are passcode-gated.** `/api/ingest`, `/api/ask`, `/api/inject`, `/api/inspirations/pin` require `ADMIN_TOKEN`. Anonymous traffic can still browse the pre-built graph.
+- **Persistent volume** keeps the SQLite cache between deploys, so re-runs are free.
+
+```bash
+# one-time setup
+fly launch --no-deploy --copy-config              # accept defaults; edit app name in fly.toml
+fly volume create pycon_data --region lax --size 1
+fly secrets set SERPAPI_API_KEY=<your-key>
+fly secrets set ADMIN_TOKEN=$(openssl rand -hex 16)
+
+# ship it
+fly deploy
+
+# hand out the demo link (URL token unlocks Ask + Ingest for the recipient):
+echo "https://$(fly status --json | jq -r .Hostname)/?t=$(fly ssh console -C 'printenv ADMIN_TOKEN')"
+```
+
+The token is stored in `localStorage` after the first visit, so the recipient just bookmarks the plain URL after that. Anyone arriving without the token sees a 🔒 badge and can browse but not spend your quota.
+
+To pre-warm the graph before going public, run one ingest locally with your key, then deploy — the SQLite cache plus the seeded sponsors/speakers means the live site looks alive from request zero.
+
 ## Reproducing the Screenshot
 
 ```bash

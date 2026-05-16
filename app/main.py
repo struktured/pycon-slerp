@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+import hmac
 import logging
 import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -35,6 +36,22 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="PyCon 2026 Knowledge Graph", lifespan=lifespan)
+
+
+# -- Optional passcode for write/SerpApi-spending endpoints ------------------
+# Set ADMIN_TOKEN in the deployment environment to gate /api/ingest,
+# /api/ask, /api/inject, /api/inspirations/pin. Anonymous traffic can still
+# browse the pre-built graph (/api/graph, /api/node, /api/stats, etc.).
+def require_admin(
+    request: Request,
+    x_admin_token: str | None = Header(default=None),
+) -> None:
+    expected = os.environ.get("ADMIN_TOKEN")
+    if not expected:
+        return  # no token configured → endpoint is open (dev mode)
+    candidate = x_admin_token or request.query_params.get("t") or ""
+    if not candidate or not hmac.compare_digest(candidate, expected):
+        raise HTTPException(status_code=401, detail="admin token required")
 
 
 class IngestRequest(BaseModel):
@@ -91,7 +108,7 @@ def api_node(node_id: str) -> dict:
 
 
 @app.post("/api/ingest")
-async def api_ingest(req: IngestRequest) -> dict:
+async def api_ingest(req: IngestRequest, _: None = Depends(require_admin)) -> dict:
     try:
         stats = await run_ingest(
             extra_queries=req.extra_queries,
@@ -115,7 +132,7 @@ async def api_ingest(req: IngestRequest) -> dict:
 
 
 @app.post("/api/ask")
-async def api_ask(req: AskRequest) -> dict:
+async def api_ask(req: AskRequest, _: None = Depends(require_admin)) -> dict:
     if not req.question.strip():
         raise HTTPException(status_code=400, detail="question is required")
     try:
@@ -171,7 +188,7 @@ def api_recent_hits(limit: int = 20) -> dict:
 
 
 @app.post("/api/inject")
-def api_inject(req: InjectRequest) -> dict:
+def api_inject(req: InjectRequest, _: None = Depends(require_admin)) -> dict:
     """Accept entities + relations extracted client-side (e.g. by an
     in-browser WebLLM) and merge them into the graph.
     """
@@ -227,7 +244,7 @@ class PinRequest(BaseModel):
 
 
 @app.post("/api/inspirations/pin")
-def api_pin_inspiration(req: PinRequest) -> dict:
+def api_pin_inspiration(req: PinRequest, _: None = Depends(require_admin)) -> dict:
     """Pin an inspiration (talk + speakers) into the graph as real nodes."""
     item = next((i for i in INSPIRATIONS if i.get("tag") == req.tag), None)
     if not item:
@@ -258,6 +275,7 @@ def api_health() -> dict:
         "ok": True,
         "serpapi_key_set": bool(os.environ.get("SERPAPI_API_KEY")),
         "anthropic_key_set": bool(os.environ.get("ANTHROPIC_API_KEY")),
+        "admin_token_required": bool(os.environ.get("ADMIN_TOKEN")),
     }
 
 

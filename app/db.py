@@ -1,10 +1,15 @@
 import json
+import os
 import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
 
-DB_PATH = Path(__file__).resolve().parent.parent / "data" / "graph.db"
+# Honor PYCON_DATA_DIR so the SQLite file can live on a mounted volume
+# (e.g. Fly.io's persistent disk) in production.
+_DEFAULT_DATA_DIR = Path(__file__).resolve().parent.parent / "data"
+DATA_DIR = Path(os.environ.get("PYCON_DATA_DIR") or _DEFAULT_DATA_DIR)
+DB_PATH = DATA_DIR / "graph.db"
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS nodes (

@@ -24,10 +24,39 @@ const state = {
   hiddenTypes: new Set(),
   raw: { nodes: [], edges: [] },
   webllm: { engine: null, status: "idle", model: null },
+  adminRequired: false,
+  token: null,
 };
 
+// Pick up an admin token from `?t=...` (the share-link form) or from
+// localStorage if the user has already unlocked once on this device.
+(function initToken() {
+  const p = new URLSearchParams(window.location.search);
+  const t = p.get("t");
+  if (t) {
+    localStorage.setItem("pycon-slerp-token", t);
+    state.token = t;
+    history.replaceState(null, "", window.location.pathname);
+  } else {
+    state.token = localStorage.getItem("pycon-slerp-token") || null;
+  }
+})();
+
 async function fetchJSON(url, opts) {
+  opts = opts || {};
+  if (state.token) {
+    opts.headers = { ...(opts.headers || {}), "X-Admin-Token": state.token };
+  }
   const r = await fetch(url, opts);
+  if (r.status === 401) {
+    const entered = prompt("This action needs the demo passcode:");
+    if (entered) {
+      localStorage.setItem("pycon-slerp-token", entered);
+      state.token = entered;
+      return fetchJSON(url, opts);
+    }
+    throw new Error("passcode required");
+  }
   if (!r.ok) throw new Error(`${url} → ${r.status}`);
   return r.json();
 }
@@ -522,6 +551,27 @@ async function refreshStats() {
   } catch {}
 }
 
+async function refreshLock() {
+  try {
+    const h = await fetchJSON("/api/health");
+    state.adminRequired = !!h.admin_token_required;
+    const badge = document.getElementById("lock-badge");
+    if (!badge) return;
+    if (!state.adminRequired) {
+      badge.hidden = true;
+      return;
+    }
+    badge.hidden = false;
+    if (state.token) {
+      badge.textContent = "🔓 demo unlocked";
+      badge.className = "lock-badge unlocked";
+    } else {
+      badge.textContent = "🔒 ingest + ask need passcode";
+      badge.className = "lock-badge locked";
+    }
+  } catch {}
+}
+
 // -- Inspirations (Powered by PyCon talks) -----------------------------------
 
 async function loadInspirations() {
@@ -571,3 +621,4 @@ async function loadInspirations() {
 
 loadGraph();
 loadInspirations();
+refreshLock();

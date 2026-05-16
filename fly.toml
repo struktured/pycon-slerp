@@ -1,0 +1,36 @@
+# Fly.io config for the PyCon 2026 Knowledge Graph demo.
+#
+# Quick start:
+#   fly launch --no-deploy --copy-config           # creates the app, edit app name below
+#   fly volume create pycon_data --region lax --size 1
+#   fly secrets set SERPAPI_API_KEY=... ADMIN_TOKEN=$(openssl rand -hex 16)
+#   fly deploy
+#
+# Hand out the demo with: https://<app>.fly.dev/?t=<your-ADMIN_TOKEN>
+# Visitors with the link can Ask and Ingest; without it they can browse only.
+
+app = "pycon-slerp"            # change to your own app name
+primary_region = "lax"         # Los Angeles — closest to Long Beach
+
+[build]
+
+[env]
+  PORT = "8080"
+  PYCON_DATA_DIR = "/data"
+
+[mounts]
+  source = "pycon_data"
+  destination = "/data"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+  processes = ["app"]
+
+[[vm]]
+  cpu_kind = "shared"
+  cpus = 1
+  memory_mb = 512

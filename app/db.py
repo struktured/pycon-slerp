@@ -184,6 +184,28 @@ def cache_search(query_hash: str, query: str, engine: str, response: dict) -> No
         )
 
 
+def recent_cached_searches(limit: int = 20) -> list[dict]:
+    """Return the most recently cached SerpApi responses, parsed."""
+    with connect() as conn:
+        rows = conn.execute(
+            """SELECT query_hash, query, engine, response, fetched_at
+               FROM search_cache
+               ORDER BY fetched_at DESC
+               LIMIT ?""",
+            (limit,),
+        ).fetchall()
+    return [
+        {
+            "query_hash": r["query_hash"],
+            "query": r["query"],
+            "engine": r["engine"],
+            "fetched_at": r["fetched_at"],
+            "response": json.loads(r["response"]),
+        }
+        for r in rows
+    ]
+
+
 def stats() -> dict:
     with connect() as conn:
         node_count = conn.execute("SELECT COUNT(*) AS c FROM nodes").fetchone()["c"]

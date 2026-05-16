@@ -1,7 +1,8 @@
-"""Extract entities (speakers, talks, repos, topics, papers) from SerpApi results.
+"""Extract entities (speakers, talks, repos, topics, papers, places, questions)
+from SerpApi results.
 
 Two paths:
-- Heuristic: URL-pattern matching + keyword rules. No external deps. Always available.
+- Heuristic: URL-pattern matching + engine-aware rules. No external deps. Always available.
 - Claude: structured extraction via Anthropic SDK. Activates if ANTHROPIC_API_KEY is set.
 """
 from __future__ import annotations
@@ -11,7 +12,6 @@ import json
 import os
 import re
 from dataclasses import dataclass, field
-from typing import Iterable
 from urllib.parse import urlparse
 
 
@@ -49,11 +49,14 @@ def normalize(s: str) -> str:
     return re.sub(r"\s+", " ", s.strip().lower())
 
 
+def _id_for(type_: str, label: str) -> str:
+    return hashlib.sha1(f"{type_}|{normalize(label)}".encode()).hexdigest()[:16]
+
+
 _GITHUB_PATH_RE = re.compile(r"^/([^/?#]+)(?:/([^/?#]+))?")
 _YOUTUBE_VIDEO_PATH_RE = re.compile(r"^/watch")
 _ARXIV_PATH_RE = re.compile(r"^/abs/([\d.v]+)")
 
-# Reserved first-path segments on github.com that are not user accounts.
 _GITHUB_NON_USER_PATHS = {
     "orgs", "sponsors", "topics", "marketplace", "settings", "notifications",
     "search", "pulls", "issues", "explore", "trending", "collections",
@@ -73,7 +76,7 @@ _TOPIC_KEYWORDS = {
 }
 
 
-def heuristic_extract(query: str, organic: list[dict]) -> tuple[list[Entity], list[Relation]]:
+def heuristic_extract(query: str, organic: list[dict], engine: str = "google") -> tuple[list[Entity], list[Relation]]:
     entities: dict[str, Entity] = {}
     relations: list[Relation] = []
 
@@ -90,7 +93,21 @@ def heuristic_extract(query: str, organic: list[dict]) -> tuple[list[Entity], li
         title = (result.get("title") or "").strip()
         link = result.get("link") or ""
         snippet = (result.get("snippet") or "").strip()
-        if not title or not link:
+        if not title:
+            continue
+
+        # Engine-specific rich extraction (uses raw payload).
+        if yt := result.get("_youtube"):
+            _extract_youtube(yt, title, link, snippet, add, relations)
+            continue
+        if local := result.get("_local"):
+            _extract_local(local, title, link, add, relations)
+            continue
+        if sch := result.get("_scholar"):
+            _extract_scholar(sch, title, link, snippet, add, relations)
+            continue
+
+        if not link:
             continue
 
         parsed = urlparse(link)
@@ -124,7 +141,7 @@ def heuristic_extract(query: str, organic: list[dict]) -> tuple[list[Entity], li
                             relations.append(Relation(user_node.label, "speaker",
                                                       repo_label, "repo", "authored"))
 
-        # YouTube videos — host must be a youtube domain.
+        # YouTube videos found via google.com searches.
         if host in {"www.youtube.com", "youtube.com", "m.youtube.com"} and _YOUTUBE_VIDEO_PATH_RE.match(path):
             add(Entity(type="video", label=title, url=link,
                        metadata={"snippet": snippet, "platform": "youtube"}))
@@ -132,10 +149,18 @@ def heuristic_extract(query: str, organic: list[dict]) -> tuple[list[Entity], li
             add(Entity(type="video", label=title, url=link,
                        metadata={"snippet": snippet, "platform": "youtube"}))
 
-        # arXiv papers — host must be arxiv.org.
+        # arXiv papers
         if host in {"arxiv.org", "www.arxiv.org"} and _ARXIV_PATH_RE.match(path):
             add(Entity(type="paper", label=title, url=link,
                        metadata={"snippet": snippet, "platform": "arxiv"}))
+
+        # Reddit threads — surface as `discussion` so they aren't lost in `article`.
+        if host.endswith("reddit.com"):
+            add(Entity(type="discussion", label=title[:90], url=link,
+                       metadata={"snippet": snippet, "platform": "reddit"}))
+            for topic in _detect_topics(f"{title} {snippet}"):
+                t = add(Entity(type="topic", label=topic))
+                relations.append(Relation(title[:90], "discussion", t.label, "topic", "about"))
 
         # Speaker pages (heuristic: title looks like "Person Name - PyCon ...")
         speaker_match = re.match(r"^([A-Z][a-z]+(?:\s+[A-Z][a-z'\-]+){1,3})\s*[-|–]", title)
@@ -147,28 +172,113 @@ def heuristic_extract(query: str, organic: list[dict]) -> tuple[list[Entity], li
         for topic in _detect_topics(f"{title} {snippet}"):
             add(Entity(type="topic", label=topic))
 
-    # Also surface generic results as "page" nodes so the graph isn't sparse
+    # Surface generic results as `article` so the graph isn't sparse
     for result in organic[:5]:
         title = (result.get("title") or "").strip()
         link = result.get("link") or ""
-        if title and link and not any(
-            pat in link for pat in ("pycon.org", "github.com", "youtube.com", "arxiv.org")
-        ):
-            add(Entity(type="article", label=title[:80], url=link,
-                       metadata={"snippet": (result.get("snippet") or "")[:200]}))
+        if not title or not link or any(k in result for k in ("_youtube", "_local", "_scholar")):
+            continue
+        if any(pat in link for pat in ("pycon.org", "github.com", "youtube.com", "arxiv.org", "reddit.com")):
+            continue
+        add(Entity(type="article", label=title[:80], url=link,
+                   metadata={"snippet": (result.get("snippet") or "")[:200]}))
 
-    # Link the query itself as a topic-ish anchor if it mentions PyCon
-    if "pycon" in query.lower():
+    # Anchor the conference event and link feature nodes
+    if "pycon" in query.lower() or engine in {"google_local"}:
         pycon = add(Entity(type="event", label="PyCon 2026"))
         for ent in list(entities.values()):
-            if ent.type in {"talk", "speaker", "video"} and ent is not pycon:
-                relations.append(Relation(pycon.label, "event", ent.label, ent.type, "features"))
+            if ent.type in {"talk", "speaker", "video", "place"} and ent is not pycon:
+                edge = "near" if ent.type == "place" else "features"
+                relations.append(Relation(pycon.label, "event", ent.label, ent.type, edge))
 
     return list(entities.values()), relations
 
 
-def _id_for(type_: str, label: str) -> str:
-    return hashlib.sha1(f"{type_}|{normalize(label)}".encode()).hexdigest()[:16]
+# -- Engine-specific extractors -----------------------------------------------
+
+def _extract_youtube(yt: dict, title: str, link: str, snippet: str, add, relations) -> None:
+    views = yt.get("views")
+    channel = yt.get("channel") or {}
+    channel_name = (channel.get("name") if isinstance(channel, dict) else channel) or ""
+    meta = {
+        "platform": "youtube",
+        "views": views,
+        "channel": channel_name,
+        "published": yt.get("published_date"),
+        "length": yt.get("length"),
+        "snippet": snippet,
+    }
+    video = add(Entity(type="video", label=title[:120], url=link, metadata=meta))
+    if channel_name:
+        speaker = add(Entity(type="speaker", label=channel_name,
+                             url=channel.get("link") if isinstance(channel, dict) else None,
+                             metadata={"platform": "youtube"}))
+        relations.append(Relation(speaker.label, "speaker", video.label, "video", "presents"))
+    for topic in _detect_topics(f"{title} {snippet}"):
+        t = add(Entity(type="topic", label=topic))
+        relations.append(Relation(video.label, "video", t.label, "topic", "about"))
+
+
+def _extract_local(local: dict, title: str, link: str, add, relations) -> None:
+    addr = local.get("address") or ""
+    rating = local.get("rating")
+    reviews = local.get("reviews")
+    place_type = local.get("type")
+    if not place_type:
+        types = local.get("types")
+        if isinstance(types, list) and types:
+            place_type = types[0]
+    coords = local.get("gps_coordinates") or {}
+    meta = {
+        "platform": "google_local",
+        "address": addr,
+        "rating": rating,
+        "reviews": reviews,
+        "type": place_type,
+        "lat": coords.get("latitude"),
+        "lng": coords.get("longitude"),
+        "hours": local.get("hours"),
+        "phone": local.get("phone"),
+    }
+    place = add(Entity(type="place", label=title[:90], url=link or None, metadata=meta))
+    # Auto-link to the PyCon event so it shows up near the conference
+    pycon = add(Entity(type="event", label="PyCon 2026"))
+    relations.append(Relation(pycon.label, "event", place.label, "place", "near"))
+
+
+def _extract_scholar(sch: dict, title: str, link: str, snippet: str, add, relations) -> None:
+    pub = sch.get("publication_info") or {}
+    authors_raw = pub.get("authors") or []
+    cited_by = ((sch.get("inline_links") or {}).get("cited_by") or {}).get("total")
+    summary = pub.get("summary") or ""
+    meta = {
+        "platform": "google_scholar",
+        "snippet": snippet or summary,
+        "cited_by": cited_by,
+        "year": _extract_year(summary),
+        "venue": summary,
+    }
+    paper = add(Entity(type="paper", label=title[:140], url=link, metadata=meta))
+    for a in authors_raw:
+        if not isinstance(a, dict):
+            continue
+        name = a.get("name") or ""
+        if not name:
+            continue
+        speaker = add(Entity(type="speaker", label=name,
+                             url=a.get("link"), metadata={"platform": "google_scholar"}))
+        relations.append(Relation(speaker.label, "speaker", paper.label, "paper", "authored"))
+    for topic in _detect_topics(f"{title} {snippet} {summary}"):
+        t = add(Entity(type="topic", label=topic))
+        relations.append(Relation(paper.label, "paper", t.label, "topic", "about"))
+
+
+_YEAR_RE = re.compile(r"\b(19|20)\d{2}\b")
+
+
+def _extract_year(text: str) -> str | None:
+    m = _YEAR_RE.search(text or "")
+    return m.group(0) if m else None
 
 
 def _detect_topics(text: str) -> set[str]:
@@ -176,18 +286,67 @@ def _detect_topics(text: str) -> set[str]:
     return {kw for kw in _TOPIC_KEYWORDS if kw in t}
 
 
+# -- Related searches & PAA → free graph edges -------------------------------
+
+def extract_related(query: str, response: dict) -> tuple[list[Entity], list[Relation]]:
+    """Turn People-Also-Ask + Related Searches into question/topic nodes and edges.
+
+    These come back on virtually every SerpApi Google response — they're a
+    nearly-free way to densify the graph with real Google co-occurrence signal.
+    """
+    entities: dict[str, Entity] = {}
+    relations: list[Relation] = []
+
+    def add(e: Entity) -> Entity:
+        if e.id in entities:
+            return entities[e.id]
+        entities[e.id] = e
+        return e
+
+    # Anchor topic from the query (use the query string as a coarse topic)
+    query_topics = _detect_topics(query)
+
+    for q in (response.get("related_questions") or [])[:10]:
+        text = (q.get("question") or "").strip()
+        if not text:
+            continue
+        snippet = (q.get("snippet") or "").strip()
+        link = q.get("link") or ""
+        question = add(Entity(type="question", label=text[:140], url=link or None,
+                              metadata={"snippet": snippet, "source": "people_also_ask"}))
+        for topic in _detect_topics(f"{text} {snippet}") | query_topics:
+            t = add(Entity(type="topic", label=topic))
+            relations.append(Relation(question.label, "question", t.label, "topic", "about"))
+
+    for r in (response.get("related_searches") or [])[:10]:
+        text = (r.get("query") or r.get("name") or "").strip()
+        if not text:
+            continue
+        related_topics = _detect_topics(text)
+        # If the related-search phrase contains a known topic, link query topics → that topic
+        for rt in related_topics:
+            target = add(Entity(type="topic", label=rt))
+            for qt in query_topics:
+                if qt == rt:
+                    continue
+                src = add(Entity(type="topic", label=qt))
+                relations.append(Relation(src.label, "topic", target.label, "topic", "related"))
+
+    return list(entities.values()), relations
+
+
 # -- Optional Claude path -----------------------------------------------------
 
 CLAUDE_AVAILABLE = bool(os.environ.get("ANTHROPIC_API_KEY"))
 
 
-def claude_extract(query: str, organic: list[dict]) -> tuple[list[Entity], list[Relation]]:
+def claude_extract(query: str, organic: list[dict], engine: str = "google") -> tuple[list[Entity], list[Relation]]:
     if not CLAUDE_AVAILABLE:
-        return heuristic_extract(query, organic)
+        return heuristic_extract(query, organic, engine=engine)
     try:
         from anthropic import Anthropic
     except ImportError:
-        return heuristic_extract(query, organic)
+        return heuristic_extract(query, organic, engine=engine)
 
     client = Anthropic()
     compact_results = [
@@ -198,14 +357,15 @@ def claude_extract(query: str, organic: list[dict]) -> tuple[list[Entity], list[
     prompt = f"""Extract entities and relationships from these search results.
 
 Query: {query}
+Engine: {engine}
 
 Results:
 {json.dumps(compact_results, indent=2)}
 
 Return JSON with this exact shape:
 {{
-  "entities": [{{"type": "speaker|talk|topic|repo|paper|video|sponsor|event|article", "label": "...", "url": "optional"}}],
-  "relations": [{{"source_label": "...", "source_type": "...", "target_label": "...", "target_type": "...", "edge_type": "presents|about|authored|works_on|sponsors|features|references"}}]
+  "entities": [{{"type": "speaker|talk|topic|repo|paper|video|sponsor|event|article|place|question|discussion", "label": "...", "url": "optional"}}],
+  "relations": [{{"source_label": "...", "source_type": "...", "target_label": "...", "target_type": "...", "edge_type": "presents|about|authored|works_on|sponsors|features|references|near|related"}}]
 }}
 
 Rules:
@@ -228,7 +388,7 @@ Return only JSON, no prose."""
             text = re.sub(r"^```(?:json)?\s*|\s*```$", "", text, flags=re.MULTILINE)
         data = json.loads(text)
     except Exception:
-        return heuristic_extract(query, organic)
+        return heuristic_extract(query, organic, engine=engine)
 
     entities = [
         Entity(type=e["type"], label=e["label"], url=e.get("url"), metadata={"source": "claude"})
@@ -243,10 +403,12 @@ Return only JSON, no prose."""
         for r in data.get("relations", [])
         if all(r.get(k) for k in ("source_label", "source_type", "target_label", "target_type", "edge_type"))
     ]
-    return entities, relations
+    # Merge with heuristic so both signals contribute
+    h_ent, h_rel = heuristic_extract(query, organic, engine=engine)
+    return entities + h_ent, relations + h_rel
 
 
-def extract(query: str, organic: list[dict], use_claude: bool = False) -> tuple[list[Entity], list[Relation]]:
+def extract(query: str, organic: list[dict], use_claude: bool = False, engine: str = "google") -> tuple[list[Entity], list[Relation]]:
     if use_claude and CLAUDE_AVAILABLE:
-        return claude_extract(query, organic)
-    return heuristic_extract(query, organic)
+        return claude_extract(query, organic, engine=engine)
+    return heuristic_extract(query, organic, engine=engine)

@@ -55,6 +55,10 @@ class SerpApiClient:
         db.cache_search(query_hash, query, engine, data)
         return data
 
+    # -- Result accessors --------------------------------------------------
+    # Each engine has its own response shape. These helpers pull the
+    # "primary list of hits" out in a consistent way.
+
     @staticmethod
     def organic_results(response: dict) -> list[dict]:
         return response.get("organic_results", []) or []
@@ -68,5 +72,68 @@ class SerpApiClient:
         return response.get("video_results", []) or []
 
     @staticmethod
+    def local_results(response: dict) -> list[dict]:
+        local = response.get("local_results")
+        if isinstance(local, dict):
+            return local.get("places", []) or []
+        return local or []
+
+    @staticmethod
+    def places_results(response: dict) -> list[dict]:
+        return response.get("places_results", []) or []
+
+    @staticmethod
+    def related_searches(response: dict) -> list[dict]:
+        return response.get("related_searches", []) or []
+
+    @staticmethod
+    def related_questions(response: dict) -> list[dict]:
+        # SerpApi exposes "People Also Ask" as `related_questions`.
+        return response.get("related_questions", []) or []
+
+    @staticmethod
     def knowledge_graph(response: dict) -> dict | None:
         return response.get("knowledge_graph")
+
+    @staticmethod
+    def inline_videos(response: dict) -> list[dict]:
+        return response.get("inline_videos", []) or []
+
+    @staticmethod
+    def primary_hits(response: dict, engine: str) -> list[dict]:
+        """Normalize the main result list across engines into a single list
+        of `{title, link, snippet, ...}` dicts."""
+        if engine == "youtube":
+            return [
+                {
+                    "title": v.get("title") or "",
+                    "link": v.get("link") or "",
+                    "snippet": v.get("description") or "",
+                    "_youtube": v,
+                }
+                for v in SerpApiClient.video_results(response)
+            ]
+        if engine in {"google_local", "google_maps"}:
+            return [
+                {
+                    "title": p.get("title") or "",
+                    "link": p.get("website") or p.get("link") or "",
+                    "snippet": p.get("description") or p.get("type") or "",
+                    "_local": p,
+                }
+                for p in SerpApiClient.local_results(response) + SerpApiClient.places_results(response)
+            ]
+        if engine == "google_scholar":
+            return [
+                {
+                    "title": r.get("title") or "",
+                    "link": r.get("link") or "",
+                    "snippet": r.get("snippet") or "",
+                    "_scholar": r,
+                }
+                for r in SerpApiClient.organic_results(response)
+            ]
+        if engine == "google_news":
+            return SerpApiClient.news_results(response)
+        # default: standard google
+        return SerpApiClient.organic_results(response)

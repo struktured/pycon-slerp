@@ -14,24 +14,42 @@
   <header>
     <div class="title">
       <h1>PyCon 2026 <span class="accent">Knowledge Graph</span></h1>
-      <p class="subtitle">Built from live SerpApi searches · entities linked across talks, speakers, repos, and topics</p>
+      <p class="subtitle">Cross-source intelligence — Google · News · Scholar · YouTube · Local · Reddit — fused into one live graph via SerpApi</p>
     </div>
     <div class="header-stats" id="header-stats">
       <span class="stat"><b id="stat-nodes">0</b> nodes</span>
       <span class="stat"><b id="stat-edges">0</b> edges</span>
+      <span class="stat"><b id="stat-engines">0</b> types</span>
     </div>
   </header>
 
   <main>
     <aside class="sidebar">
+      <section class="card ask-card">
+        <h2>Ask the graph</h2>
+        <p class="hint">Natural-language question → Claude writes a multi-engine SerpApi plan → graph grows live.</p>
+        <textarea id="ask-input" placeholder="e.g. Which AI/ML talks are at PyCon 2026?"></textarea>
+        <button id="ask-btn">Ask</button>
+        <div id="ask-plan" class="plan" hidden></div>
+        <pre id="ask-log" class="log"></pre>
+      </section>
+
       <section class="card">
         <h2>Ingest</h2>
-        <p class="hint">Trigger SerpApi crawls. Results are cached locally.</p>
-        <label class="check"><input type="checkbox" id="use-claude" /> Use Claude for extraction (if API key set)</label>
-        <label class="check"><input type="checkbox" id="expand-speakers" checked /> Expand top speakers</label>
+        <p class="hint">Run the full multi-engine crawl. Results are cached locally.</p>
+        <label class="check"><input type="checkbox" id="use-claude" /> Server-side Claude extraction (needs ANTHROPIC_API_KEY)</label>
+        <label class="check"><input type="checkbox" id="use-browser-llm" /> In-browser LLM extraction (WebGPU, no API key)</label>
+        <span id="webllm-badge" class="badge" hidden></span>
+        <label class="check"><input type="checkbox" id="expand-speakers" checked /> Expand top speakers (web + scholar)</label>
         <textarea id="extra-queries" placeholder="One extra query per line (optional)"></textarea>
         <button id="ingest-btn">Run ingest</button>
         <pre id="ingest-log" class="log"></pre>
+      </section>
+
+      <section class="card inspired-card">
+        <h2>Powered by PyCon talks</h2>
+        <p class="hint">Features in this project draw on tech from PyCon 2026 speakers — clicking a talk pins it to the graph.</p>
+        <div id="inspired-list" class="inspired-list"></div>
       </section>
 
       <section class="card">
@@ -44,6 +62,8 @@
         <h2 id="detail-title">Node</h2>
         <p id="detail-type" class="muted"></p>
         <a id="detail-url" target="_blank" rel="noreferrer"></a>
+        <div id="detail-kg" class="kg-card" hidden></div>
+        <div id="detail-meta" class="meta-pills"></div>
         <div id="detail-neighbors"></div>
         <h3>Sources</h3>
         <ul id="detail-sources"></ul>
